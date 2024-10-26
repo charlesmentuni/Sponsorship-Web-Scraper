@@ -1,14 +1,44 @@
 import requests as rq
 from bs4 import BeautifulSoup as bs
 import json
+import time
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 
 def scrape_devpost():
-    url = "https://devpost.com/hackathons&page="
-    for pageNum in range(1, 10):
-        response=rq.get(url+str(pageNum))
-        soup = bs(response.text, 'html.parser')
-        print(soup)
+    all_urls = []
+    url = "https://devpost.com/hackathons"
+    driver = webdriver.Chrome()
+
+    # Open the webpage
+    driver.get(url)
+    time.sleep(2)
+    # Wait until an element is present (e.g., an element with id 'content')
+    try:
+        element = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.ID, "results-and-filters")),
+        )
+        
+        soup = bs(driver.page_source, 'html.parser')
+        for _ in range(1000):
+            hackathons = soup.find_all(class_="hackathon-tile clearfix open mb-5")
+            for hackathon in hackathons:
+                if not  hackathon in all_urls:
+                    all_urls.append(hackathon.find('a').get('href'))
+            driver.execute_script("window.scrollBy(0, 1000);")
+            time.sleep(1)
+
+    finally:
+        driver.quit()
+    
+    with open("sponsor_urls.txt", "w") as file:
+        file.seek(0)
+        text_urls = "\n".join(x for x in all_urls)
+        file.write(text_urls)
+        file.close()
 
 def get_sponsor_information(all_sponsors):
     result = dict()
@@ -33,9 +63,17 @@ def get_hackathon_information(soup):
         keywords
         Location or online
     '''
-    result = dict()
 
-    result['participant_number'] = soup.find(id='challenge-information').find_all(class_="info")[1].find_all('td')[3].find('strong').text
+    result = dict()
+    keywords = []
+    keyword_elements = soup.find(id='challenge-information').find_all(class_='info')[4].find_all(class_='label theme-label mr-1 mb-2')
+    for keyword in keyword_elements:
+        keywords.append(keyword.text.strip())
+    
+
+
+    result['keywords'] = keywords
+    result['participant_number'] = int(soup.find(id='challenge-information').find_all(class_="info")[1].find_all('td')[3].find('strong').text)
     result['name'] = soup.find_all(class_ = "large-8 columns content")[0].find_all('h1')[0].text
 
     return result
@@ -67,6 +105,7 @@ def add_sponsors(data):
                     number_of_hackathons : 12,
                     name : "The A Company",
                     logo: "img_link"
+                    keywords : ['beginner friendly', 'ai'] 
                 }
         }
         Average number of participants can be inferred
@@ -78,21 +117,24 @@ def add_sponsors(data):
                  # perform calculations
                 all_sponsors[key]['participants_num'] += data['hackathon']['participant_number']
                 all_sponsors[key]['hackathon_num'] += 1
-                file.close() 
             else: 
                 all_sponsors[key] = dict()
                 all_sponsors[key]['participants_num'] = data['hackathon']['participant_number']
                 all_sponsors[key]['hackathon_num'] = 1
                 all_sponsors[key]['name'] = data['sponsors'][key]['name']
+                all_sponsors[key]['logo'] = data['sponsors'][key]['logo']
+                
         
         file.seek(0)
-        json.dump(all_sponsors, file)
+        json.dump(all_sponsors, file, indent=4)
     return 
 
 if __name__ == '__main__':
-        #scrape_devpost()
+        # scrape_devpost()
         example_url = "https://hackathon24.devpost.com/?ref_feature=challenge&ref_medium=discover"
         example_url1 = "https://codegeist.devpost.com/?ref_feature=challenge&ref_medium=discover"
         example_url2 = "https://api-world-2024-hackathon.devpost.com/?ref_feature=challenge&ref_medium=discover"
-        r = scrape_individual_hackathon(example_url2)
+
+        r = scrape_individual_hackathon(example_url1)
+        print(r['hackathon'])
         add_sponsors(r)
